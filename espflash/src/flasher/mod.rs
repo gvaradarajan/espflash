@@ -771,6 +771,63 @@ impl Flasher {
         Ok(())
     }
 
+    /// For Viam, load an ELF image to flash and execute it with NVS data included
+    pub fn load_elf_to_flash_with_format_with_nvs(
+        &mut self,
+        elf_data: &[u8],
+        bootloader: Option<Vec<u8>>,
+        partition_table: Option<PartitionTable>,
+        nvs_data: Vec<u8>,
+        image_format: Option<ImageFormatKind>,
+        flash_mode: Option<FlashMode>,
+        flash_size: Option<FlashSize>,
+        flash_freq: Option<FlashFrequency>,
+        mut progress: Option<&mut dyn ProgressCallbacks>,
+    ) -> Result<(), Error> {
+        let image = ElfFirmwareImage::try_from(elf_data)?;
+
+        let mut target = self.chip.flash_target(self.spi_params, self.use_stub);
+        target.begin(&mut self.connection).flashing()?;
+
+        // The ESP8266 does not have readable major/minor revision numbers, so we have
+        // nothing to return if targeting it.
+        let chip_revision = if self.chip != Chip::Esp8266 {
+            Some(
+                self.chip
+                    .into_target()
+                    .chip_revision(&mut self.connection)?,
+            )
+        } else {
+            None
+        };
+
+        let image = self.chip.into_target().get_flash_image_with_nvs_data(
+            &image,
+            bootloader,
+            partition_table,
+            Some(nvs_data),
+            image_format,
+            chip_revision,
+            flash_mode,
+            flash_size.or(Some(self.flash_size)),
+            flash_freq,
+        )?;
+
+        // When the `cli` feature is enabled, display the image size information.
+        #[cfg(feature = "cli")]
+        crate::cli::display_image_size(image.app_size(), image.part_size());
+
+        for segment in image.flash_segments() {
+            target
+                .write_segment(&mut self.connection, segment, &mut progress)
+                .flashing()?;
+        }
+
+        target.finish(&mut self.connection, true).flashing()?;
+
+        Ok(())
+    }
+
     /// Load an bin image to flash at a specific address
     pub fn write_bin_to_flash(
         &mut self,

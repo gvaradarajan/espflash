@@ -1,7 +1,7 @@
 use std::{borrow::Cow, io::Write, iter::once, mem::size_of};
 
 use bytemuck::{bytes_of, from_bytes};
-use esp_idf_part::{PartitionTable, Type};
+use esp_idf_part::{PartitionTable, Type, SubType, DataType};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -24,6 +24,7 @@ pub struct IdfBootloaderFormat<'a> {
     params: Esp32Params,
     bootloader: Cow<'a, [u8]>,
     partition_table: PartitionTable,
+    nvs_data: Option<Vec<u8>>,
     flash_segment: RomSegment<'a>,
     app_size: u32,
     part_size: u32,
@@ -35,6 +36,7 @@ impl<'a> IdfBootloaderFormat<'a> {
         chip: Chip,
         params: Esp32Params,
         partition_table: Option<PartitionTable>,
+        nvs_data: Option<Vec<u8>>,
         bootloader: Option<Vec<u8>>,
         flash_mode: Option<FlashMode>,
         flash_size: Option<FlashSize>,
@@ -171,10 +173,20 @@ impl<'a> IdfBootloaderFormat<'a> {
             params,
             bootloader,
             partition_table,
+            nvs_data,
             flash_segment,
             app_size,
             part_size,
         })
+    }
+
+    fn get_nvs_addr(&self) -> Option<u32> {
+        match self.partition_table.find_by_subtype(Type::Data, SubType::Data(DataType::Nvs)) {
+            Some(part) => {
+                Some(part.offset())
+            },
+            None => None
+        }
     }
 }
 
@@ -183,17 +195,38 @@ impl<'a> ImageFormat<'a> for IdfBootloaderFormat<'a> {
     where
         'a: 'b,
     {
-        Box::new(
-            once(RomSegment {
-                addr: self.params.boot_addr,
-                data: Cow::Borrowed(&self.bootloader),
-            })
-            .chain(once(RomSegment {
-                addr: self.params.partition_addr,
-                data: Cow::Owned(self.partition_table.to_bin().unwrap()),
-            }))
-            .chain(once(self.flash_segment.borrow())),
-        )
+        match &self.nvs_data {
+            Some(data) => {
+                Box::new(
+                    once(RomSegment {
+                        addr: self.params.boot_addr,
+                        data: Cow::Borrowed(&self.bootloader),
+                    })
+                    .chain(once(RomSegment {
+                        addr: self.params.partition_addr,
+                        data: Cow::Owned(self.partition_table.to_bin().unwrap()),
+                    }))
+                    .chain(once(RomSegment { 
+                        addr: self.get_nvs_addr().unwrap(), 
+                        data: Cow::Owned(data.to_vec())
+                    }))
+                    .chain(once(self.flash_segment.borrow())),
+                )
+            },
+            None => {
+                Box::new(
+                    once(RomSegment {
+                        addr: self.params.boot_addr,
+                        data: Cow::Borrowed(&self.bootloader),
+                    })
+                    .chain(once(RomSegment {
+                        addr: self.params.partition_addr,
+                        data: Cow::Owned(self.partition_table.to_bin().unwrap()),
+                    }))
+                    .chain(once(self.flash_segment.borrow())),
+                )
+            }
+        }
     }
 
     fn ota_segments<'b>(&'b self) -> Box<dyn Iterator<Item = RomSegment<'b>> + 'b>
@@ -314,7 +347,7 @@ pub mod tests {
 
         let image = ElfFirmwareImage::try_from(input_bytes.as_slice()).unwrap();
         let flash_image =
-            IdfBootloaderFormat::new(&image, Chip::Esp32, PARAMS, None, None, None, None, None)
+            IdfBootloaderFormat::new(&image, Chip::Esp32, PARAMS, None, None, None, None, None, None)
                 .unwrap();
 
         let segments = flash_image.flash_segments().collect::<Vec<_>>();

@@ -109,6 +109,7 @@ impl Target for Esp32s3 {
                 Chip::Esp32s3,
                 PARAMS,
                 partition_table,
+                None,
                 bootloader,
                 flash_mode,
                 flash_size,

@@ -87,6 +87,7 @@ impl Target for Esp32c6 {
                 Chip::Esp32c6,
                 PARAMS,
                 partition_table,
+                None,
                 bootloader,
                 flash_mode,
                 flash_size,

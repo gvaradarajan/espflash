@@ -71,7 +71,7 @@ pub fn get_serial_port_info(
 
 /// Given a vector of `SerialPortInfo` structs, attempt to find and return one
 /// whose `port_name` field matches the provided `name` argument.
-fn find_serial_port(ports: &[SerialPortInfo], name: &str) -> Result<SerialPortInfo, Error> {
+pub fn find_serial_port(ports: &[SerialPortInfo], name: &str) -> Result<SerialPortInfo, Error> {
     #[cfg(not(target_os = "windows"))]
     let name = fs::canonicalize(name)?;
     #[cfg(not(target_os = "windows"))]

@@ -11,7 +11,7 @@ use espflash::{
         self, board_info, completions, config::Config, connect, erase_partitions, flash_elf_image,
         monitor::monitor, parse_partition_table, partition_table, print_board_info,
         save_elf_as_image, serial_monitor, CompletionsArgs, ConnectArgs, EspflashProgress,
-        FlashConfigArgs, MonitorArgs, PartitionTableArgs,
+        FlashConfigArgs, MonitorArgs, PartitionTableArgs
     },
     image_format::ImageFormatKind,
     logging::initialize_logger,

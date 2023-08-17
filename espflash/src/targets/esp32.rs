@@ -169,6 +169,37 @@ impl Target for Esp32 {
                 Chip::Esp32,
                 PARAMS,
                 partition_table,
+                None,
+                bootloader,
+                flash_mode,
+                flash_size,
+                flash_freq,
+            )?)),
+            _ => Err(UnsupportedImageFormatError::new(image_format, Chip::Esp32, None).into()),
+        }
+    }
+
+    fn get_flash_image_with_nvs_data<'a>(
+        &self,
+        image: &'a dyn FirmwareImage<'a>,
+        bootloader: Option<Vec<u8>>,
+        partition_table: Option<PartitionTable>,
+        nvs_data: Option<Vec<u8>>,
+        image_format: Option<ImageFormatKind>,
+        _chip_revision: Option<(u32, u32)>,
+        flash_mode: Option<FlashMode>,
+        flash_size: Option<FlashSize>,
+        flash_freq: Option<FlashFrequency>,
+    ) -> Result<Box<dyn ImageFormat<'a> + 'a>, Error> {
+        let image_format = image_format.unwrap_or(ImageFormatKind::EspBootloader);
+
+        match image_format {
+            ImageFormatKind::EspBootloader => Ok(Box::new(IdfBootloaderFormat::new(
+                image,
+                Chip::Esp32,
+                PARAMS,
+                partition_table,
+                nvs_data,
                 bootloader,
                 flash_mode,
                 flash_size,

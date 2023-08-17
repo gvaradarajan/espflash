@@ -304,6 +304,21 @@ pub trait Target: ReadEFuse {
         flash_freq: Option<FlashFrequency>,
     ) -> Result<Box<dyn ImageFormat<'a> + 'a>, Error>;
 
+    fn get_flash_image_with_nvs_data<'a>(
+        &self,
+        _image: &'a dyn FirmwareImage<'a>,
+        _bootloader: Option<Vec<u8>>,
+        _partition_table: Option<PartitionTable>,
+        _nvs_data: Option<Vec<u8>>,
+        _image_format: Option<ImageFormatKind>,
+        _chip_revision: Option<(u32, u32)>,
+        _flash_mode: Option<FlashMode>,
+        _flash_size: Option<FlashSize>,
+        _flash_freq: Option<FlashFrequency>,
+    ) -> Result<Box<dyn ImageFormat<'a> + 'a>, Error> {
+        Err(Error::NVSWritingUnsupported)
+    }
+
     /// What is the MAC address?
     fn mac_address(&self, connection: &mut Connection) -> Result<String, Error> {
         let word5 = self.read_efuse(connection, 17)?;

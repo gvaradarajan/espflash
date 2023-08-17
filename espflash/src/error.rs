@@ -141,6 +141,10 @@ pub enum Error {
     #[error(transparent)]
     #[diagnostic(transparent)]
     UnsupportedImageFormat(#[from] UnsupportedImageFormatError),
+
+    #[error("Target does not support flashing with NVS data")]
+    #[diagnostic(code(espflash::nvs_writing_unsupported))]
+    NVSWritingUnsupported,
 }
 
 impl From<io::Error> for Error {
