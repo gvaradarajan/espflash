@@ -271,6 +271,7 @@ pub fn serial_monitor(args: MonitorArgs, config: &Config) -> Result<()> {
         elf.as_deref(),
         pid,
         args.connect_args.baud.unwrap_or(default_baud),
+        None
     )
     .into_diagnostic()?;
 

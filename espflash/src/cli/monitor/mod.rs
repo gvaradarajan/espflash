@@ -11,7 +11,8 @@
 //! in our monitor the output is displayed immediately upon reading.
 
 use std::{
-    io::{stdout, ErrorKind, Write},
+    fs::File,
+    io::{stdout, ErrorKind, Write, BufWriter},
     time::Duration,
 };
 
@@ -78,6 +79,7 @@ pub fn monitor(
     elf: Option<&[u8]>,
     pid: u16,
     baud: u32,
+    log_path: Option<String>
 ) -> serialport::Result<()> {
     println!("Commands:");
     println!("    CTRL+R    Reset chip");
@@ -106,6 +108,11 @@ pub fn monitor(
     let mut stdout = stdout.lock();
 
     let mut buff = [0; 1024];
+    let mut log_file: Option<BufWriter<File>> = if let Some(log_path) = log_path.as_ref() {
+        File::create(log_path).map(BufWriter::new).ok()
+    } else {
+        None
+    };
     loop {
         let read_count = match serial.serial_port_mut().read(&mut buff) {
             Ok(count) => Ok(count),
@@ -115,7 +122,7 @@ pub fn monitor(
         }?;
 
         if read_count > 0 {
-            handle_serial(&mut ctx, &buff[0..read_count], &mut stdout);
+            handle_serial(&mut ctx, &buff[0..read_count], &mut stdout, &mut log_file);
         }
 
         if poll(Duration::from_secs(0))? {
@@ -142,8 +149,26 @@ pub fn monitor(
     Ok(())
 }
 
+fn strip_ansi_formatting(line_str: &str) -> String {
+    let found = line_str.contains("(61) boot:");
+    if found {
+        println!("\nreceived: {}", line_str.as_bytes()[0]);
+    }
+    let re = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+    let line_str = re.replace_all(line_str, "").to_string();
+    if found {
+        println!("\nreceived: {}", line_str.as_bytes()[0]);
+    }
+    let re = Regex::new(r";[0-9]*m").unwrap();
+    let line_str = re.replace_all(&line_str, "").to_string();
+    if found {
+        println!("\nreceived: {}", line_str.as_bytes()[0]);
+    }
+    line_str
+}
+
 /// Handles and writes the received serial data to the given output stream.
-fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write) {
+fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write, log_file: &mut Option<BufWriter<File>>) {
     let text: Vec<u8> = normalized(buff.iter().copied()).collect();
     let text = String::from_utf8_lossy(&text).to_string();
 
@@ -166,6 +191,13 @@ fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write) {
         // for function addresses in the *entire* previous line we combine these prior
         // to performing the symbol lookup(s).
         ctx.previous_line = if let Some(frag) = &ctx.previous_frag {
+            let line_copy = format!("{frag}{line}");
+            if let Some(log_file) = log_file.as_mut() {
+                if let Err(err) = log_file.write_all(strip_ansi_formatting(&line_copy).as_bytes()) {
+                    println!("could not write line {} to log file: {}", line_copy, err.to_string());
+                }
+                log_file.write_all(b"\n").ok();
+            }
             Some(format!("{frag}{line}"))
         } else {
             Some(line.to_string())
@@ -178,6 +210,7 @@ fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write) {
         if let Some(symbols) = &ctx.symbols {
             // And there was previously a line printed to the terminal...
             if let Some(line) = &ctx.previous_line {
+
                 // Check the previous line for function addresses. For each address found,
                 // attempt to look up the associated function's name and location and write both
                 // to the terminal.
@@ -212,7 +245,6 @@ fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write) {
     // perform function name lookups or terminate it with a newline.
     if let Some(line) = incomplete {
         out.queue(Print(line)).ok();
-
         if let Some(frag) = &ctx.previous_frag {
             ctx.previous_frag = Some(format!("{frag}{line}"));
         } else {
@@ -221,6 +253,9 @@ fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write) {
     }
 
     // Don't forget to flush the writer!
+    if let Some(log_file) = log_file.as_mut() {
+        log_file.flush().ok();
+    }
     out.flush().ok();
 }
 
