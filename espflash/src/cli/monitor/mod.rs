@@ -11,10 +11,12 @@
 //! in our monitor the output is displayed immediately upon reading.
 
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{stdout, ErrorKind, Write, BufWriter},
     time::Duration,
 };
+
+use chrono::offset::Local;
 
 use crossterm::{
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -109,7 +111,11 @@ pub fn monitor(
 
     let mut buff = [0; 1024];
     let mut log_file: Option<BufWriter<File>> = if let Some(log_path) = log_path.as_ref() {
-        File::create(log_path).map(BufWriter::new).ok()
+        let log_file_obj = OpenOptions::new().create(true).append(true).open(log_path);
+        if let Err(err) = log_file_obj.as_ref() {
+            println!("error opening log_file: {:?}", err);
+        }
+        log_file_obj.map(BufWriter::new).ok()
     } else {
         None
     };
@@ -145,26 +151,25 @@ pub fn monitor(
             }
         }
     }
+    if let Some(remaining_log) = ctx.previous_line.as_ref() {
+        println!("found previous frag");
+        if let Some(log_file) = log_file.as_mut() {
+            let remaining_log = strip_ansi_formatting_and_apply_timestamp(remaining_log);
+            log_file.write_all(format!("{remaining_log}\n").as_bytes())?;
+            log_file.flush()?;
+        }
+    } 
 
     Ok(())
 }
 
-fn strip_ansi_formatting(line_str: &str) -> String {
-    let found = line_str.contains("(61) boot:");
-    if found {
-        println!("\nreceived: {}", line_str.as_bytes()[0]);
-    }
+fn strip_ansi_formatting_and_apply_timestamp(line_str: &str) -> String {
     let re = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
     let line_str = re.replace_all(line_str, "").to_string();
-    if found {
-        println!("\nreceived: {}", line_str.as_bytes()[0]);
-    }
     let re = Regex::new(r";[0-9]*m").unwrap();
     let line_str = re.replace_all(&line_str, "").to_string();
-    if found {
-        println!("\nreceived: {}", line_str.as_bytes()[0]);
-    }
-    line_str
+    let current_time = Local::now().format("%+");
+    format!("{current_time} - {line_str}")
 }
 
 /// Handles and writes the received serial data to the given output stream.
@@ -193,7 +198,9 @@ fn handle_serial(ctx: &mut SerialContext, buff: &[u8], out: &mut dyn Write, log_
         ctx.previous_line = if let Some(frag) = &ctx.previous_frag {
             let line_copy = format!("{frag}{line}");
             if let Some(log_file) = log_file.as_mut() {
-                if let Err(err) = log_file.write_all(strip_ansi_formatting(&line_copy).as_bytes()) {
+                if let Err(err) = log_file.write_all(
+                    strip_ansi_formatting_and_apply_timestamp(&line_copy).as_bytes()
+                ) {
                     println!("could not write line {} to log file: {}", line_copy, err.to_string());
                 }
                 log_file.write_all(b"\n").ok();
